@@ -18,7 +18,7 @@
 <div><label>Starting mana</label><input id="cfgMana" type="number" min="0" max="100" value="5"></div>
 <div><label>Mana gain round 2</label><input id="cfgR2" type="number" min="0" max="100" value="10"></div>
 <div><label>Mana gain round 3</label><input id="cfgR3" type="number" min="0" max="100" value="15"></div>
-<div><label>Mana gain round 4</label><input id="cfgR4" type="number" min="0" max="100" value="20"></div><div><label>Mana gain round 5 and later</label><input id="cfgR5" type="number" min="0" max="100" value="20"></div><div><label>Round limit (blank = play until someone reaches 0 HP)</label><input id="cfgMax" type="number" min="1" max="99" placeholder="No limit"></div>
+<div><label>Mana gain round 4</label><input id="cfgR4" type="number" min="0" max="100" value="20"></div><div><label>Mana gain round 5 and later</label><input id="cfgR5" type="number" min="0" max="100" value="20"></div>
 <div><label>Mana cap (blank = none)</label><input id="cfgCap" type="number" min="1" max="200" placeholder="No cap"></div>
 </div><button id="createRoom" class="primary">Create room</button><div id="roomDisplay" class="notice hidden"></div>
 </div>
@@ -29,8 +29,8 @@
 <div class="panel"><div class="section-title"><h2 id="roundTitle">Round 1</h2><div class="row"><span id="turnInfo" class="notice">Waiting</span><button id="endTurn" class="primary hidden">End action phase</button></div></div><div id="status" class="sub"></div></div>
 <div id="quizPanel" class="panel hidden"><div class="tag">Initiative quiz</div><div class="quizq" id="question"></div><div id="answers" class="quiz-options"></div><div id="quizStatus" class="small"></div></div>
 <div id="battle" class="board"></div>
-<div class="panel"><div class="section-title"><h2>Your hand</h2><span id="handInfo" class="small"></span></div><div id="hand" class="cards"></div><div id="targetPanel" class="notice hidden"><span id="targetPrompt">Choose a target</span><div id="targets" class="row" style="margin-top:8px"></div><button id="cancelTarget">Cancel</button></div></div>
-<div class="grid"><div class="panel"><h2>Battle log</h2><div id="log" class="log"></div><div class="notice small" style="margin-top:10px"><b>Rules note:</b> The duel runs until a player's HP reaches 0. If the host sets a round limit, the higher HP wins at the limit. Mana income after round 4 is set by the host, and each player's discard pile is reshuffled when their deck runs out.</div></div><div class="panel"><h2>Playtest stats</h2><div id="stats" class="stats"></div><p class="small">Stats are for this match. Export the log after the game to compare configurations.</p><button id="exportLog">Export game log</button><button id="newMatch">Back to lobby</button></div></div>
+<div class="panel"><div class="section-title"><h2>Your hand</h2><span id="handInfo" class="small"></span></div><div id="hand" class="cards"></div><div class="row" style="margin-top:10px"><button id="openBurn" class="danger hidden">Burn mana to replace cards</button></div><div id="burnPanel" class="notice hidden" style="margin-top:10px"><b>Burn cards</b><p class="small">Select 1–4 cards to discard and replace. It costs 1 mana per card and uses one action.</p><div id="burnChoices" class="grid"></div><div class="row" style="margin-top:10px"><button id="confirmBurn" class="primary">Replace selected cards</button><button id="cancelBurn">Cancel</button><span id="burnStatus" class="small"></span></div></div><div id="targetPanel" class="notice hidden"><span id="targetPrompt">Choose a target</span><div id="targets" class="row" style="margin-top:8px"></div><button id="cancelTarget">Cancel</button></div></div>
+<div class="grid"><div class="panel"><h2>Battle log</h2><div id="log" class="log"></div><div class="notice small" style="margin-top:10px"><b>Rules note:</b> The duel continues until a player reaches 0 HP. Mana income after round 4 is set by the host. Each player's discard pile is reshuffled when their deck runs out. Burning cards costs 1 mana per card replaced and uses one action.</div></div><div class="panel"><h2>Playtest stats</h2><div id="stats" class="stats"></div><p class="small">Stats are for this match. Export the log after the game to compare configurations.</p><button id="exportLog">Export game log</button><button id="newMatch">Back to lobby</button></div></div>
 </section>
 </div>
 <script>
@@ -163,12 +163,12 @@ function addHost(name,faction,cfg){
 }
 function idShort(s){return s||""}
 function join(code,name){isHost=false;localId="p2";localName=name;roomId=code.trim().toUpperCase();setConnection("Connecting…");peer=new Peer();peer.on("open",()=>{conn=peer.connect(roomId,{reliable:true});conn.on("open",()=>{setConnection("Connected · "+roomId);sendGuest({type:"join",name});});conn.on("data",m=>{if(m.type==="state"){lastState=m.state;game=m.state;showGame();render(game)}else if(m.type==="error")alert(m.message)});conn.on("close",()=>setConnection("Disconnected"));});peer.on("error",e=>{setConnection("Connection failed");alert("Couldn't join this room ("+e.type+"). Check the code and ensure the host is online.")})}
-function handleGuestMessage(m){if(!isHost||!game)return;if(m.type==="join"){game.players[1].name=(m.name||"Opponent").slice(0,20);say(game.players[1].name+" joined the duel.");broadcast()}if(m.type==="answer")answerQuiz(1,m.index,Date.now());if(m.type==="play")playCard(1,m.cardId,m.targetId);if(m.type==="pass")passAction(1)}
+function handleGuestMessage(m){if(!isHost||!game)return;if(m.type==="join"){game.players[1].name=(m.name||"Opponent").slice(0,20);say(game.players[1].name+" joined the duel.");broadcast()}if(m.type==="answer")answerQuiz(1,m.index,Date.now());if(m.type==="play")playCard(1,m.cardId,m.targetId);if(m.type==="pass")passAction(1);if(m.type==="burn")burnCards(1,m.cardIds)}
 function meIndex(){return isHost?0:1}
 function activePlayer(){return game.turnOrder[game.turnIndex]??0}
 function startQuiz(){game.phase="quiz";game.quiz={question:pickQuestion(),answers:[null,null],times:[null,null],winner:null};quizAnswered=false;quizStartedAt=Date.now();broadcast()}
 function answerQuiz(player,index,sentAt){if(!game||game.phase!=="quiz"||game.quiz.answers[player]!==null)return;const q=QUESTIONS[game.quiz.question];game.quiz.answers[player]=index;game.quiz.times[player]=sentAt||Date.now();if(index===q.c){const candidates=[0,1].filter(i=>game.quiz.answers[i]===q.c).sort((a,b)=>game.quiz.times[a]-game.quiz.times[b]);if(candidates.length){game.quiz.winner=candidates[0];game.turnOrder=[game.quiz.winner,1-game.quiz.winner];game.phase="actions";game.turnIndex=0;game.actionsThisRound=[0,0];say("Initiative: "+game.players[game.quiz.winner].name+" goes first.");}}else if(game.quiz.answers.every(a=>a!==null)){game.quiz.winner=Math.random()<.5?0:1;game.turnOrder=[game.quiz.winner,1-game.quiz.winner];game.phase="actions";game.turnIndex=0;game.actionsThisRound=[0,0];say("No correct answers. Initiative decided randomly: "+game.players[game.quiz.winner].name+".")}broadcast()}
-function startRound(){if(game.cfg.maxRounds&&game.round>=+game.cfg.maxRounds){finishGame();return}game.round++;for(const p of game.players){const gain=game.round<=4?(+game.cfg["r"+game.round]||0):(+game.cfg.r5||0);p.mana+=gain;if(game.cfg.cap!==null&&game.cfg.cap!=="" )p.mana=Math.min(p.mana,+game.cfg.cap);for(const m of p.manaRegen){if(m.rounds>0){p.mana+=m.amount;m.rounds--}}p.manaRegen=p.manaRegen.filter(x=>x.rounds>0);if(game.cfg.cap!==null&&game.cfg.cap!=="")p.mana=Math.min(p.mana,+game.cfg.cap)}say("Round "+game.round+" begins.");startQuiz()}
+function startRound(){game.round++;for(const p of game.players){const gain=game.round<=4?(+game.cfg["r"+game.round]||0):(+game.cfg.r5||0);p.mana+=gain;if(game.cfg.cap!==null&&game.cfg.cap!=="" )p.mana=Math.min(p.mana,+game.cfg.cap);for(const m of p.manaRegen){if(m.rounds>0){p.mana+=m.amount;m.rounds--}}p.manaRegen=p.manaRegen.filter(x=>x.rounds>0);if(game.cfg.cap!==null&&game.cfg.cap!=="")p.mana=Math.min(p.mana,+game.cfg.cap)}say("Round "+game.round+" begins.");startQuiz()}
 function damagePlayer(target,amount,source){let p=game.players[target],d=Math.max(0,amount);if(p.prevent){p.prevent=false;say(p.name+"'s Null Ward prevented damage.");return 0}let absorbed=Math.min(p.shield,d);p.shield-=absorbed;d-=absorbed;p.hp=Math.max(0,p.hp-d);game.stats.damageDealt[1-target]+=d;say(source+" deals "+amount+" damage to "+p.name+(absorbed?" ("+absorbed+" absorbed by shield)":"")+".");return d}
 function healPlayer(target,amount,source){let p=game.players[target],before=p.hp;p.hp=Math.min(p.maxHp,p.hp+amount);let h=p.hp-before;game.stats.healing[target]+=h;say(source+" heals "+p.name+" for "+h+".")}
 function effect(card,owner,targetId){const p=game.players[owner],opp=game.players[1-owner];let parts=card.effect.split(";");for(let raw of parts){let x=raw.split(":");let kind=x[0];if(kind==="trigger")continue;let who=x[1],amt=parseInt(x[2])||0;switch(kind){
@@ -197,21 +197,68 @@ advanceTurn();broadcast()}
 function chooseTarget(card,player){pendingTarget={cardId:card.id,player};$("targetPanel").classList.remove("hidden");$("targetPrompt").textContent=card.name+": choose a minion";const targets=$("targets");targets.innerHTML="";const list=targetKind(card)==="enemy"?game.players[1-player].minions:game.players[player].minions;list.forEach(m=>{let b=document.createElement("button");b.textContent=m.name+" ("+m.hp+" HP)";b.onclick=()=>{const t=pendingTarget;pendingTarget=null;$("targetPanel").classList.add("hidden");if(isHost)playCard(player,t.cardId,m.id);else sendGuest({type:"play",cardId:t.cardId,targetId:m.id})};targets.appendChild(b)});if(!list.length){$("targetPrompt").textContent="No valid minions to target.";}}
 $("cancelTarget").onclick=()=>{$("targetPanel").classList.add("hidden");pendingTarget=null}
 function advanceTurn(){if(game.actionsThisRound[0]>=2&&game.actionsThisRound[1]>=2){endRound();return}let tries=0;do{game.turnIndex=(game.turnIndex+1)%2;tries++}while(game.actionsThisRound[activePlayer()]>=2&&tries<3);if(game.actionsThisRound[0]>=2&&game.actionsThisRound[1]>=2)endRound()}
-function endRound(){say("End of round "+game.round+".");for(let i=0;i<2;i++){const p=game.players[i],opp=game.players[1-i];for(const m of [...p.minions]){const eff=m.effect.split(";").filter(b=>!b.startsWith("trigger=")).join(";");if(eff)effect({name:m.name,effect:eff},i,null)}
-for(const d of p.dots){damagePlayer(i,d.amount,d.name);d.rounds--}p.dots=p.dots.filter(d=>d.rounds>0);for(const h of p.hots){healPlayer(i,h.amount,h.name);h.rounds--}p.hots=p.hots.filter(h=>h.rounds>0);
-for(const s of p.shieldTimers){s.rounds--;if(s.rounds<=0){p.shield=Math.max(0,p.shield-s.amount);say(p.name+"'s temporary shield expires.")}}p.shieldTimers=p.shieldTimers.filter(s=>s.rounds>0)}
-if(game.players.some(p=>p.hp<=0)){finishGame();return}game.stats.roundsSurvived=game.round;startRound()}
+function endRound(){
+ say("End of round "+game.round+".");
+ for(let i=0;i<2;i++){
+  const p=game.players[i];
+  for(const m of [...p.minions]){
+   const eff=m.effect.split(";").filter(b=>!b.startsWith("trigger=")).join(";");
+   if(eff)effect({name:m.name,effect:eff},i,null);
+   if(game.players.some(pl=>pl.hp<=0)){game.stats.roundsSurvived=game.round;finishGame();return}
+  }
+  for(const d of p.dots){damagePlayer(i,d.amount,d.name);d.rounds--;if(game.players.some(pl=>pl.hp<=0)){game.stats.roundsSurvived=game.round;finishGame();return}}
+  p.dots=p.dots.filter(d=>d.rounds>0);
+  for(const h of p.hots){healPlayer(i,h.amount,h.name);h.rounds--}
+  p.hots=p.hots.filter(h=>h.rounds>0);
+  for(const sh of p.shieldTimers){sh.rounds--;if(sh.rounds<=0){p.shield=Math.max(0,p.shield-sh.amount);say(p.name+"'s temporary shield expires.")}}
+  p.shieldTimers=p.shieldTimers.filter(sh=>sh.rounds>0);
+ }
+ if(game.players.some(p=>p.hp<=0)){game.stats.roundsSurvived=game.round;finishGame();return}
+ game.stats.roundsSurvived=game.round;startRound();
+}
+function burnCards(player,cardIds){
+ if(!game||game.phase!=="actions"||game.done||activePlayer()!==player)return;
+ const p=game.players[player];
+ const ids=[...new Set((cardIds||[]).map(String))];
+ if(ids.length<1||ids.length>4){if(player===0)alert("Choose between 1 and 4 cards.");return}
+ if(p.mana<ids.length){if(player===0)alert("Not enough mana: replacing "+ids.length+" cards costs "+ids.length+" mana.");return}
+ const selected=ids.map(id=>p.hand.find(c=>c.id===id));
+ if(selected.some(c=>!c)){if(player===0)alert("One or more selected cards are no longer in your hand.");return}
+ p.mana-=ids.length;
+ for(const card of selected)p.hand=p.hand.filter(c=>c.id!==card.id);
+ say(p.name+" burns "+ids.length+" mana to replace "+ids.length+" card"+(ids.length===1?"":"s")+".");
+ for(let i=0;i<ids.length;i++)drawCard(p);
+ p.discard.push(...selected);
+ game.actionsThisRound[player]++;game.actionCount++;
+ if(p.hp<=0||game.players[1-player].hp<=0)finishGame();else advanceTurn();
+ broadcast();
+}
+function openBurnPanel(){
+ if(!lastState&&!game)return;
+ const st=lastState||viewFor(isHost?"p1":"p2");if(!st)return;
+ const my=st.you??(isHost?0:1),p=st.players[my];
+ if(st.done||st.phase!=="actions"||st.turnOrder[st.turnIndex]!==my||st.actionsThisRound[my]>=2)return;
+ const panel=$("burnPanel"),choices=$("burnChoices");choices.innerHTML="";
+ p.hand.filter(c=>!c.hidden).forEach(c=>{const label=document.createElement("label");label.style.cssText="display:flex;gap:8px;align-items:flex-start;background:#111724;padding:9px;border-radius:8px;margin:0;color:var(--ink)";const cb=document.createElement("input");cb.type="checkbox";cb.value=c.id;cb.style.width="auto";cb.style.marginTop="4px";const span=document.createElement("span");span.innerHTML="<b>"+esc(c.name)+"</b><br><span class=small>"+esc(c.mana)+" mana · "+esc(c.effectText)+"</span>";label.append(cb,span);choices.appendChild(label)});
+ $("burnStatus").textContent="0 selected · 0 mana";panel.classList.remove("hidden");
+ choices.querySelectorAll("input").forEach(cb=>cb.addEventListener("change",()=>{const selected=choices.querySelectorAll("input:checked").length;if(selected>4){cb.checked=false;return}$("burnStatus").textContent=selected+" selected · "+selected+" mana";$("confirmBurn").disabled=selected<1||selected>4||p.mana<selected}));
+ $("confirmBurn").disabled=true;
+}
+$("openBurn").onclick=openBurnPanel;
+$("cancelBurn").onclick=()=>$("burnPanel").classList.add("hidden");
+$("confirmBurn").onclick=()=>{const ids=[...$("burnChoices").querySelectorAll("input:checked")].map(cb=>cb.value);if(ids.length<1||ids.length>4)return;$("burnPanel").classList.add("hidden");if(isHost)burnCards(0,ids);else sendGuest({type:"burn",cardIds:ids})};
 function passAction(player){if(!game||game.phase!=="actions"||activePlayer()!==player)return;game.actionsThisRound[player]++;say(game.players[player].name+" passes an action.");advanceTurn();broadcast()}
 function finishGame(){game.done=true;game.phase="done";game.winner=game.players[0].hp===game.players[1].hp?"draw":game.players[0].hp>game.players[1].hp?0:1;say(game.winner==="draw"?"The duel ends in a draw.":game.players[game.winner].name+" wins with "+game.players[game.winner].hp+" HP remaining.");broadcast()}
-function render(s){if(!s)return;const my=s.you??(isHost?0:1),opp=1-my; $("roundTitle").textContent=s.done?"Game complete":"Round "+s.round+(s.cfg&&s.cfg.maxRounds?" / "+s.cfg.maxRounds:"");$("turnInfo").textContent=s.done?"Finished":s.phase==="quiz"?"Initiative quiz":s.players[s.turnOrder[s.turnIndex]].name+"'s action";$("status").textContent=s.done?(s.winner==="draw"?"Draw":s.players[s.winner].name+" wins"):(s.phase==="quiz"?"Answer the Swedish quiz quickly to compete for initiative.":s.phase==="actions"?"Each player gets two actions per round. Mana carries over.":"");
+function render(s){if(!s)return;const my=s.you??(isHost?0:1),opp=1-my; $("roundTitle").textContent=s.done?"Game complete":"Round "+s.round;$("turnInfo").textContent=s.done?"Finished":s.phase==="quiz"?"Initiative quiz":s.players[s.turnOrder[s.turnIndex]].name+"'s action";$("status").textContent=s.done?(s.winner==="draw"?"Draw":s.players[s.winner].name+" wins"):(s.phase==="quiz"?"Answer the Swedish quiz quickly to compete for initiative.":s.phase==="actions"?"Each player gets two actions per round. Mana carries over.":"");
 const battle=$("battle");battle.innerHTML="";s.players.forEach((p,i)=>{const el=document.createElement("div");el.className="player"+(i===my?" you":"");el.innerHTML=`<h2 style="color:${p.faction==="wild"?"var(--wild)":"var(--arcane)"}">${esc(p.name)} · ${p.faction.toUpperCase()} ${i===my?"(YOU)":""}</h2><div class="stats"><div class="stat"><span class="small">Health</span><b>${p.hp}/${p.maxHp}</b></div><div class="stat"><span class="small">Mana</span><b>${p.mana}</b></div><div class="stat"><span class="small">Shield</span><b>${p.shield}</b></div><div class="stat"><span class="small">Cards</span><b>${p.hand.length}${p.hand.some(c=>c.hidden)?" (hidden)":""}</b></div></div><div class="bar"><span style="width:${Math.max(0,p.hp/p.maxHp*100)}%;background:${p.faction==="wild"?"var(--wild)":"var(--arcane)"}"></span></div><h3 style="font-size:13px;margin:12px 0 4px">Minions (${p.minions.length})</h3><div>${p.minions.length?p.minions.map(m=>`<span class="minion">${esc(m.name)} · ${m.hp}/${m.maxHp} HP</span>`).join(""):'<span class="small">No minions</span>'}</div><div class="small" style="margin-top:8px">Actions this round: ${s.actionsThisRound[i]}/2 · Deck: ${p.deck.length} cards</div>`;battle.appendChild(el)});
 const qp=$("quizPanel");if(s.phase==="quiz"&&!s.done){qp.classList.remove("hidden");const q=QUESTIONS[s.quiz.question];$("question").textContent=q.q;const ans=$("answers");ans.innerHTML="";q.a.forEach((a,i)=>{const b=document.createElement("button");b.textContent=a;b.disabled=(s.quiz.answers&&s.quiz.answers[my]!==null)||s.quiz.winner!==null;b.onclick=()=>{if(isHost)answerQuiz(0,i,Date.now());else sendGuest({type:"answer",index:i,sentAt:Date.now()});quizAnswered=true;};ans.appendChild(b)});$("quizStatus").textContent=s.quiz.winner!==null?"Initiative: "+s.players[s.quiz.winner].name:s.quiz.answers.some(a=>a!==null)?"Answer submitted — waiting for the other player…":"Fastest correct answer wins initiative."}else qp.classList.add("hidden");
 const hand=$("hand");hand.innerHTML="";const canAct=!s.done&&s.phase==="actions"&&s.turnOrder[s.turnIndex]===my&&s.actionsThisRound[my]<2;const myHand=s.players[my].hand.filter(c=>!c.hidden);$("handInfo").textContent=myHand.length+" cards · "+(canAct?"Your action":"Waiting for your turn");myHand.forEach(c=>{const d=document.createElement("div");d.className="card "+s.players[my].faction;d.innerHTML=`<div><span class="tag">${esc(c.school)} · ${esc(c.type)}</span><span class="cost">${c.mana} mana</span></div><h3>${esc(c.name)}</h3><div class="desc">${esc(c.effectText)}</div><div class="small" style="margin:8px 0">${esc(c.rarity)}</div><button ${!canAct||s.players[my].mana<c.mana||(targetPool(c,s,my)&&minionOnly(c)&&!targetPool(c,s,my).length)?"disabled":""}>Play card</button>`;d.querySelector("button").onclick=()=>{const tk=targetKind(c);const tl=tk==="enemy"?s.players[opp].minions:tk==="own"?s.players[my].minions:[];if(tk&&tl.length){chooseTarget(c,my)}else if(isHost)playCard(0,c.id);else sendGuest({type:"play",cardId:c.id})};hand.appendChild(d)});
+$("openBurn").classList.toggle("hidden",!canAct||myHand.length===0);$("openBurn").disabled=!canAct||myHand.length===0;
 $("endTurn").classList.toggle("hidden",!canAct);$("endTurn").textContent="Pass action";$("endTurn").onclick=()=>{if(isHost)passAction(0);else sendGuest({type:"pass"})};
 $("log").innerHTML=(s.log||[]).map(l=>`<div><span class="small">R${l.round} · ${esc(l.time||"")}</span> ${esc(l.msg)}</div>`).join("");$("stats").innerHTML=`<div class="stat"><span class="small">Cards played</span><b>${s.stats.cardsPlayed[0]+s.stats.cardsPlayed[1]}</b></div><div class="stat"><span class="small">Damage dealt</span><b>${s.stats.damageDealt[0]+s.stats.damageDealt[1]}</b></div><div class="stat"><span class="small">Healing</span><b>${s.stats.healing[0]+s.stats.healing[1]}</b></div><div class="stat"><span class="small">Rounds reached</span><b>${s.stats.roundsSurvived}</b></div>`;
 }
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
-$("createRoom").onclick=()=>{const cfg={hp:+$("cfgHp").value,mana:+$("cfgMana").value,r2:+$("cfgR2").value,r3:+$("cfgR3").value,r4:+$("cfgR4").value,r5:+$("cfgR5").value,maxRounds:$("cfgMax").value===""?null:+$("cfgMax").value,cap:$("cfgCap").value===""?null:+$("cfgCap").value};if(!cfg.hp||cfg.mana<0){alert("Please enter valid health and mana values.");return}addHost($("hostName").value.trim()||"Wild Mage",$("hostFaction").value,cfg)};
+$("createRoom").onclick=()=>{const cfg={hp:+$("cfgHp").value,mana:+$("cfgMana").value,r2:+$("cfgR2").value,r3:+$("cfgR3").value,r4:+$("cfgR4").value,r5:+$("cfgR5").value,cap:$("cfgCap").value===""?null:+$("cfgCap").value};if(!cfg.hp||cfg.mana<0){alert("Please enter valid health and mana values.");return}addHost($("hostName").value.trim()||"Wild Mage",$("hostFaction").value,cfg)};
 $("joinRoom").onclick=()=>{const code=$("roomCode").value.trim()||new URLSearchParams(location.search).get("room");if(!code){alert("Enter a room code.");return}join(code,$("guestName").value.trim()||"Opponent")};
 $("exportLog").onclick=()=>{if(!game)return;const blob=new Blob([JSON.stringify({settings:game.cfg,players:game.players.map(p=>({name:p.name,faction:p.faction,hp:p.hp,mana:p.mana})),stats:game.stats,log:game.log},null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="wild-arcane-playtest.json";a.click();URL.revokeObjectURL(a.href)};
 $("newMatch").onclick=()=>location.reload();
