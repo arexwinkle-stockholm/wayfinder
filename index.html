@@ -217,13 +217,19 @@ function endRound(){
  game.stats.roundsSurvived=game.round;startRound();
 }
 function burnCards(player,cardIds){
- if(!game||game.phase!=="actions"||game.done||activePlayer()!==player)return;
+ if(!game)return;
  const p=game.players[player];
+ if(game.phase!=="actions"||game.done||activePlayer()!==player){
+  const message="Burning cards is only available during your own action phase.";
+  if(player===0)alert(message);else if(conn&&conn.open)conn.send({type:"error",message});
+  return;
+ }
  const ids=[...new Set((cardIds||[]).map(String))];
- if(ids.length<1||ids.length>4){if(player===0)alert("Choose between 1 and 4 cards.");return}
- if(p.mana<ids.length){if(player===0)alert("Not enough mana: replacing "+ids.length+" cards costs "+ids.length+" mana.");return}
+ const reject=(message)=>{say("Burn failed for "+p.name+": "+message);if(player===0)alert(message);else if(conn&&conn.open)conn.send({type:"error",message});broadcast()};
+ if(ids.length<1||ids.length>4){reject("Choose between 1 and 4 cards.");return}
+ if(p.mana<ids.length){reject("Not enough mana: replacing "+ids.length+" cards costs "+ids.length+" mana.");return}
  const selected=ids.map(id=>p.hand.find(c=>c.id===id));
- if(selected.some(c=>!c)){if(player===0)alert("One or more selected cards are no longer in your hand.");return}
+ if(selected.some(c=>!c)){reject("One or more selected cards are no longer in your hand. Please reopen the burn panel.");return}
  p.mana-=ids.length;
  for(const card of selected)p.hand=p.hand.filter(c=>c.id!==card.id);
  say(p.name+" burns "+ids.length+" mana to replace "+ids.length+" card"+(ids.length===1?"":"s")+".");
@@ -240,20 +246,23 @@ function openBurnPanel(){
  if(st.done||st.phase!=="actions"||st.turnOrder[st.turnIndex]!==my||st.actionsThisRound[my]>=2)return;
  const panel=$("burnPanel"),choices=$("burnChoices");choices.innerHTML="";
  p.hand.filter(c=>!c.hidden).forEach(c=>{const label=document.createElement("label");label.style.cssText="display:flex;gap:8px;align-items:flex-start;background:#111724;padding:9px;border-radius:8px;margin:0;color:var(--ink)";const cb=document.createElement("input");cb.type="checkbox";cb.value=c.id;cb.style.width="auto";cb.style.marginTop="4px";const span=document.createElement("span");span.innerHTML="<b>"+esc(c.name)+"</b><br><span class=small>"+esc(c.mana)+" mana · "+esc(c.effectText)+"</span>";label.append(cb,span);choices.appendChild(label)});
- $("burnStatus").textContent="0 selected · 0 mana";panel.classList.remove("hidden");
- choices.querySelectorAll("input").forEach(cb=>cb.addEventListener("change",()=>{const selected=choices.querySelectorAll("input:checked").length;if(selected>4){cb.checked=false;return}$("burnStatus").textContent=selected+" selected · "+selected+" mana";$("confirmBurn").disabled=selected<1||selected>4||p.mana<selected}));
+ $("burnStatus").textContent="0 selected · 0 mana · You have "+p.mana+" mana";panel.classList.remove("hidden");
+ choices.querySelectorAll("input").forEach(cb=>cb.addEventListener("change",()=>{const selected=choices.querySelectorAll("input:checked").length;if(selected>4){cb.checked=false;return}$("burnStatus").textContent=selected+" selected · "+selected+" mana"+(p.mana<selected?" · Not enough mana":"");$("confirmBurn").disabled=selected<1||selected>4||p.mana<selected}));
  $("confirmBurn").disabled=true;
 }
 $("openBurn").onclick=openBurnPanel;
 $("cancelBurn").onclick=()=>$("burnPanel").classList.add("hidden");
-$("confirmBurn").onclick=()=>{const ids=[...$("burnChoices").querySelectorAll("input:checked")].map(cb=>cb.value);if(ids.length<1||ids.length>4)return;$("burnPanel").classList.add("hidden");if(isHost)burnCards(0,ids);else sendGuest({type:"burn",cardIds:ids})};
+$("confirmBurn").onclick=()=>{const ids=[...$("burnChoices").querySelectorAll("input:checked")].map(cb=>cb.value);if(ids.length<1||ids.length>4)return;$("burnPanel").classList.add("hidden");if(isHost)burnCards(0,ids);else if(conn&&conn.open)sendGuest({type:"burn",cardIds:ids});else {$("burnPanel").classList.remove("hidden");$("burnStatus").textContent="Not connected to the host. Reconnect before burning cards."}};
 function passAction(player){if(!game||game.phase!=="actions"||activePlayer()!==player)return;game.actionsThisRound[player]++;say(game.players[player].name+" passes an action.");advanceTurn();broadcast()}
 function finishGame(){game.done=true;game.phase="done";game.winner=game.players[0].hp===game.players[1].hp?"draw":game.players[0].hp>game.players[1].hp?0:1;say(game.winner==="draw"?"The duel ends in a draw.":game.players[game.winner].name+" wins with "+game.players[game.winner].hp+" HP remaining.");broadcast()}
 function render(s){if(!s)return;const my=s.you??(isHost?0:1),opp=1-my; $("roundTitle").textContent=s.done?"Game complete":"Round "+s.round;$("turnInfo").textContent=s.done?"Finished":s.phase==="quiz"?"Initiative quiz":s.players[s.turnOrder[s.turnIndex]].name+"'s action";$("status").textContent=s.done?(s.winner==="draw"?"Draw":s.players[s.winner].name+" wins"):(s.phase==="quiz"?"Answer the Swedish quiz quickly to compete for initiative.":s.phase==="actions"?"Each player gets two actions per round. Mana carries over.":"");
 const battle=$("battle");battle.innerHTML="";s.players.forEach((p,i)=>{const el=document.createElement("div");el.className="player"+(i===my?" you":"");el.innerHTML=`<h2 style="color:${p.faction==="wild"?"var(--wild)":"var(--arcane)"}">${esc(p.name)} · ${p.faction.toUpperCase()} ${i===my?"(YOU)":""}</h2><div class="stats"><div class="stat"><span class="small">Health</span><b>${p.hp}/${p.maxHp}</b></div><div class="stat"><span class="small">Mana</span><b>${p.mana}</b></div><div class="stat"><span class="small">Shield</span><b>${p.shield}</b></div><div class="stat"><span class="small">Cards</span><b>${p.hand.length}${p.hand.some(c=>c.hidden)?" (hidden)":""}</b></div></div><div class="bar"><span style="width:${Math.max(0,p.hp/p.maxHp*100)}%;background:${p.faction==="wild"?"var(--wild)":"var(--arcane)"}"></span></div><h3 style="font-size:13px;margin:12px 0 4px">Minions (${p.minions.length})</h3><div>${p.minions.length?p.minions.map(m=>`<span class="minion">${esc(m.name)} · ${m.hp}/${m.maxHp} HP</span>`).join(""):'<span class="small">No minions</span>'}</div><div class="small" style="margin-top:8px">Actions this round: ${s.actionsThisRound[i]}/2 · Deck: ${p.deck.length} cards</div>`;battle.appendChild(el)});
 const qp=$("quizPanel");if(s.phase==="quiz"&&!s.done){qp.classList.remove("hidden");const q=QUESTIONS[s.quiz.question];$("question").textContent=q.q;const ans=$("answers");ans.innerHTML="";q.a.forEach((a,i)=>{const b=document.createElement("button");b.textContent=a;b.disabled=(s.quiz.answers&&s.quiz.answers[my]!==null)||s.quiz.winner!==null;b.onclick=()=>{if(isHost)answerQuiz(0,i,Date.now());else sendGuest({type:"answer",index:i,sentAt:Date.now()});quizAnswered=true;};ans.appendChild(b)});$("quizStatus").textContent=s.quiz.winner!==null?"Initiative: "+s.players[s.quiz.winner].name:s.quiz.answers.some(a=>a!==null)?"Answer submitted — waiting for the other player…":"Fastest correct answer wins initiative."}else qp.classList.add("hidden");
 const hand=$("hand");hand.innerHTML="";const canAct=!s.done&&s.phase==="actions"&&s.turnOrder[s.turnIndex]===my&&s.actionsThisRound[my]<2;const myHand=s.players[my].hand.filter(c=>!c.hidden);$("handInfo").textContent=myHand.length+" cards · "+(canAct?"Your action":"Waiting for your turn");myHand.forEach(c=>{const d=document.createElement("div");d.className="card "+s.players[my].faction;d.innerHTML=`<div><span class="tag">${esc(c.school)} · ${esc(c.type)}</span><span class="cost">${c.mana} mana</span></div><h3>${esc(c.name)}</h3><div class="desc">${esc(c.effectText)}</div><div class="small" style="margin:8px 0">${esc(c.rarity)}</div><button ${!canAct||s.players[my].mana<c.mana||(targetPool(c,s,my)&&minionOnly(c)&&!targetPool(c,s,my).length)?"disabled":""}>Play card</button>`;d.querySelector("button").onclick=()=>{const tk=targetKind(c);const tl=tk==="enemy"?s.players[opp].minions:tk==="own"?s.players[my].minions:[];if(tk&&tl.length){chooseTarget(c,my)}else if(isHost)playCard(0,c.id);else sendGuest({type:"play",cardId:c.id})};hand.appendChild(d)});
-$("openBurn").classList.toggle("hidden",!canAct||myHand.length===0);$("openBurn").disabled=!canAct||myHand.length===0;
+$("openBurn").classList.toggle("hidden",s.done||myHand.length===0);
+$("openBurn").disabled=!canAct||myHand.length===0;
+$("openBurn").textContent=canAct?"Burn mana to replace cards":"Burn cards (available on your turn)";
+$("openBurn").title=canAct?"Replace 1–4 cards for 1 mana each; uses one action":"You can burn cards only during your action phase";
 $("endTurn").classList.toggle("hidden",!canAct);$("endTurn").textContent="Pass action";$("endTurn").onclick=()=>{if(isHost)passAction(0);else sendGuest({type:"pass"})};
 $("log").innerHTML=(s.log||[]).map(l=>`<div><span class="small">R${l.round} · ${esc(l.time||"")}</span> ${esc(l.msg)}</div>`).join("");$("stats").innerHTML=`<div class="stat"><span class="small">Cards played</span><b>${s.stats.cardsPlayed[0]+s.stats.cardsPlayed[1]}</b></div><div class="stat"><span class="small">Damage dealt</span><b>${s.stats.damageDealt[0]+s.stats.damageDealt[1]}</b></div><div class="stat"><span class="small">Healing</span><b>${s.stats.healing[0]+s.stats.healing[1]}</b></div><div class="stat"><span class="small">Rounds reached</span><b>${s.stats.roundsSurvived}</b></div>`;
 }
